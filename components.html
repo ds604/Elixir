@@ -124,3 +124,37 @@ EOF
 )"
 </textarea>
 </details>
+
+
+<details><summary>Deno webview - run shell command and print to window</summary>
+<textarea>
+deno run -Ar --unstable - <<-"EOF"
+import { Webview } from "jsr:@webview/webview";
+const td = new TextDecoder()
+
+let content = "hello world";
+function generateHtml(content){ 
+    return `<html>
+    <body>
+        <h1>${Math.random()}</h1>
+        <button onclick="run()">
+        Press me!
+        </button>
+        <pre>${content}</pre>
+    </body>
+    </html>`;
+}
+
+const webview = new Webview();
+webview.navigate(`data:text/html,${encodeURIComponent(generateHtml(content))}`);
+
+webview.bind("run", cmd => {
+    const command = new Deno.Command("ls", { args: ["-la"] });
+    const { code, stdout, stderr } = command.outputSync();
+    webview.navigate(`data:text/html,${encodeURIComponent(generateHtml( td.decode(stdout) ))}`);
+})
+
+webview.run();
+EOF
+</textarea>
+</details>
