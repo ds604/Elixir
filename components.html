@@ -1,0 +1,126 @@
+<style>
+    textarea {
+        height: 500px;
+        width: 800px;
+    }
+</style>
+
+<details><summary>Liveview Counter, shared state - 04/25/2024</summary>
+<textarea>
+elixir -e "$(cat <<-"EOF"
+Application.put_env(:sample, Example.Endpoint,
+  http: [ip: {127, 0, 0, 1}, port: 5001],
+  server: true,
+  live_view: [signing_salt: "aaaaaaaa"],
+  secret_key_base: String.duplicate("a", 64)
+)
+
+Mix.install([
+  {:plug_cowboy, "~> 2.5"},
+  {:jason, "~> 1.0"},
+  {:phoenix, "~> 1.7.0"},
+  {:phoenix_live_view, "~> 0.19.0"}
+])
+
+defmodule Example.ErrorView do
+  def render(template, _), do: Phoenix.Controller.status_message_from_template(template)
+end
+
+defmodule Example.HomeLive do
+    #use Example, :live_view
+  use Phoenix.LiveView, layout: {__MODULE__, :live}
+
+  @topic "live"
+
+  def mount(_params, _session, socket) do
+    Phoenix.PubSub.subscribe(Example.PubSub, @topic)
+    #Example.Endpoint.subscribe(@topic)
+    {:ok, assign(socket, :count, 0)}
+  end
+
+  defp phx_vsn, do: Application.spec(:phoenix, :vsn)
+  defp lv_vsn, do: Application.spec(:phoenix_live_view, :vsn)
+
+  def render("live.html", assigns) do
+    ~H"""
+    <script src={"https://cdn.jsdelivr.net/npm/phoenix@#{phx_vsn()}/priv/static/phoenix.min.js"}></script>
+    <script src={"https://cdn.jsdelivr.net/npm/phoenix_live_view@#{lv_vsn()}/priv/static/phoenix_live_view.min.js"}></script>
+    <script>
+      let liveSocket = new window.LiveView.LiveSocket("/live", window.Phoenix.Socket)
+      liveSocket.connect()
+    </script>
+    <style>
+      * { font-size: 1.1em; }
+    </style>
+    <%= @inner_content %>
+    """
+  end
+
+  def render(assigns) do
+    ~H"""
+    <%= @count %>
+    <button phx-click="inc">+</button>
+    <button phx-click="dec">-</button>
+    """
+  end
+
+  def handle_event("inc", _params, socket) do
+    # new_state = update(socket, :count, &(&1 + 1))
+    # {:noreply, assign(socket, :count, socket.assigns.count + 1)}
+
+    #new_count = socket.assigns.count + 1
+    new_state = update(socket, :count, &(&1 + 1))
+    Phoenix.PubSub.broadcast(Example.PubSub, @topic, new_state.assigns)
+    IO.inspect(new_state.assigns)
+    {:noreply, new_state}
+  end
+
+  def handle_event("dec", _params, socket) do
+    #{:noreply, assign(socket, :count, socket.assigns.count - 1)}
+
+    new_state = update(socket, :count, &(&1 - 1))
+    Phoenix.PubSub.broadcast(Example.PubSub, @topic, new_state.assigns)
+    IO.inspect(new_state.assigns)
+    {:noreply, new_state}
+  end
+
+  def handle_info(msg, socket) do
+    IO.inspect(msg)
+    {:noreply, assign(socket, count: msg.count)}
+  end
+end
+
+defmodule Example.Router do
+  use Phoenix.Router
+  import Phoenix.LiveView.Router
+    import Plug.Conn
+    import Phoenix.Controller
+
+  pipeline :browser do
+    plug(:accepts, ["html"])
+  end
+
+  scope "/", Example do
+    pipe_through(:browser)
+
+    live("/", HomeLive, :index)
+  end
+end
+
+defmodule Example.Endpoint do
+  use Phoenix.Endpoint, otp_app: :sample
+  socket("/live", Phoenix.LiveView.Socket)
+
+  # if origin mismatch, like on replit, set check_origin option
+  #socket("/live", Phoenix.LiveView.Socket,
+  #  websocket: [check_origin: false])
+  
+  plug(Example.Router)
+end
+
+{:ok, _} = Supervisor.start_link([{Phoenix.PubSub, name: Example.PubSub}, Example.Endpoint], strategy: :one_for_one)
+Process.sleep(:infinity)
+EOF
+)"
+</textarea>
+</details>
